@@ -9,14 +9,29 @@ no servidor.
 @author: Aydano Machado <aydano.machado@gmail.com>
 """
 import sys
-from sklearn.pipeline import Pipeline, make_pipeline
-from sklearn.preprocessing import MinMaxScaler, minmax_scale, RobustScaler
-from sklearn.impute import SimpleImputer, KNNImputer
-from sklearn.model_selection import cross_val_score
+from datetime import datetime
 
 import pandas as pd
-from sklearn.neighbors import KNeighborsClassifier
 import requests
+
+from sklearn.pipeline import Pipeline, make_pipeline
+from sklearn.preprocessing import MinMaxScaler, RobustScaler
+from sklearn.impute import SimpleImputer, KNNImputer
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.model_selection import cross_val_score
+
+LOG_FILE = 'results.txt'
+
+def log_result(desc: str, response: requests.Response, internal_score: str) -> None:
+    """ Saves the server's responde in a .txt file"""
+    with open(LOG_FILE, "a", encoding="utf-8") as file:
+        file.write("\n\n" + desc.upper())
+        file.write(f"\n{datetime.now()}")
+        file.write("\nCross Validation:")
+        file.write(f"\n\t {internal_score}")
+        file.write("Servidor:")
+        for key, value in response.json().items():
+            file.write(f"\n\t{key}: {value}")
 
 print('\n - Lendo o arquivo com o dataset sobre diabetes')
 data = pd.read_csv('diabetes_dataset.csv')
@@ -25,15 +40,15 @@ data = pd.read_csv('diabetes_dataset.csv')
 print(' - Criando X e y para o algoritmo de aprendizagem a partir do arquivo diabetes_dataset')
 
 # Caso queira modificar as colunas consideradas basta alterar o array a seguir.
-feature_cols = ['Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness', 
-                'Insulin', 'BMI', 'DiabetesPedigreeFunction', 'Age']
+feature_cols = ['Pregnancies', 'Glucose', 'BloodPressure', 'BMI', 'DiabetesPedigreeFunction', 'Age']
 X = data[feature_cols]
 y = data.Outcome
 
 # Criando imputadores de valores
 print(' - Criando imputador')
 imputador_zeros = SimpleImputer(strategy="constant", fill_value=0)
-imputador_media = SimpleImputer(add_indicator=True)
+imputador_media = SimpleImputer()
+imputador_mediana = SimpleImputer(strategy="median")
 imp_knn = KNNImputer()
 
 # Criando escaladores
@@ -47,12 +62,14 @@ neigh = KNeighborsClassifier(n_neighbors=3) # classificador
 # neigh.fit(X_scaled, y)
 
 # Pipeline de pre processamento
-pipe = make_pipeline(imp_knn, statistics_scaler, neigh)
+pipe = make_pipeline(imputador_mediana, statistics_scaler, neigh)
 
 # Testando com validacao cruzada na base de testes ('database')
+print(' - Testando o modelo com validacao cruzada')
 scores = cross_val_score(pipe, X, y, cv=5)
-print(scores)
-print(f'Mean: {scores.mean()} +/- {scores.std()}')
+print(f'\t{scores}')
+internal_score: str = f'\tMean: {scores.mean()} +/- {scores.std()}'
+print(internal_score)
 enviar = input("Enviar? (y/n) ")
 
 if enviar != 'y':
@@ -84,5 +101,9 @@ data = {'dev_key':DEV_KEY,
 r = requests.post(url = URL, data = data)
 
 # Extraindo e imprimindo o texto da resposta
-pastebin_url = r.text
 print(" - Resposta do servidor:\n", r.text, "\n")
+
+log = input("Deseja registrar esse resultado? (y/n) ")
+if log == 'y':
+    desc: str = input("Descreva essa tentativa: ")
+    log_result(desc, r, internal_score)

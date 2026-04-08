@@ -69,4 +69,4 @@ clf_knn = KNeighborsClassifier(n_neighbors=3) # classificador
 # train_and_score('sem nenhum NaN', X_NaNfree, y_NaNfree, clf_knn)
 # train_and_score('com zeros no lugar de NaN', X, y, clf_knn, imp_zeros)
 # train_and_score('com a media no lugar de NaN', X, y, clf_knn, imp_means)
-train_and_score('com KNN Imputer e Normalizacao', X, y, clf_knn, min_max_scaler, imp_knn)
+train_and_score('com KNN Imputer e Normalizacao, sem coluna insulina', X, y, clf_knn, min_max_scaler, imp_knn)
