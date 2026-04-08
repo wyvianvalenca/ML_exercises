@@ -29,7 +29,7 @@ def log_result(desc: str, response: requests.Response, internal_score: str) -> N
         file.write(f"\n{datetime.now()}")
         file.write("\nCross Validation:")
         file.write(f"\n\t {internal_score}")
-        file.write("Servidor:")
+        file.write("\nServidor:")
         for key, value in response.json().items():
             file.write(f"\n\t{key}: {value}")
 
@@ -47,7 +47,7 @@ y = data.Outcome
 # Criando imputadores de valores
 print(' - Criando imputador')
 imputador_zeros = SimpleImputer(strategy="constant", fill_value=0)
-imputador_media = SimpleImputer()
+imputador_media = SimpleImputer() # default is mean
 imputador_mediana = SimpleImputer(strategy="median")
 imp_knn = KNNImputer()
 
@@ -62,7 +62,7 @@ neigh = KNeighborsClassifier(n_neighbors=3) # classificador
 # neigh.fit(X_scaled, y)
 
 # Pipeline de pre processamento
-pipe = make_pipeline(imputador_mediana, statistics_scaler, neigh)
+pipe = make_pipeline(imputador_mediana, min_max_scaler, neigh)
 
 # Testando com validacao cruzada na base de testes ('database')
 print(' - Testando o modelo com validacao cruzada')
