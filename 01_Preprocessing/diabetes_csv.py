@@ -7,103 +7,94 @@ Criação de modelo preditivo para diabetes e envio para verificação de peform
 no servidor.
 
 @author: Aydano Machado <aydano.machado@gmail.com>
+
+- Tratamento de zeros ocultos
+- Undersampling (Balanceamento de classes)
+- KNNImputer para preenchimento de NaN
+@author: Aydano Machado <aydano.machado@gmail
+- RobustScaler para escala
+- Classificador: KNeighborsClassifier(n_neighbors=3)
 """
+
 import sys
 from datetime import datetime
 
 import pandas as pd
+import numpy as np
 import requests
 
-from sklearn.pipeline import Pipeline, make_pipeline
-from sklearn.preprocessing import MinMaxScaler, RobustScaler
-from sklearn.impute import SimpleImputer, KNNImputer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.impute import KNNImputer
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import StratifiedKFold, cross_val_score
 
 LOG_FILE = 'results.txt'
 
 def log_result(desc: str, response: requests.Response, internal_score: str) -> None:
-    """ Saves the server's responde in a .txt file"""
     with open(LOG_FILE, "a", encoding="utf-8") as file:
         file.write("\n\n" + desc.upper())
         file.write(f"\n{datetime.now()}")
-        file.write("\nCross Validation:")
+        file.write("\nCross Validation (Stratified):")
         file.write(f"\n\t {internal_score}")
         file.write("\nServidor:")
         for key, value in response.json().items():
             file.write(f"\n\t{key}: {value}")
 
-print('\n - Lendo o arquivo com o dataset sobre diabetes')
+print('\n - Lendo o ficheiro com o dataset sobre diabetes')
 data = pd.read_csv('diabetes_dataset.csv')
 
-# Criando par X (colunas independentes) e y (resultado) para algorítmo de aprendizagem de máquina.
-print(' - Criando X e y para o algoritmo de aprendizagem a partir do arquivo diabetes_dataset')
+cols_with_zeros = ['Glucose', 'BloodPressure', 'BMI']
+data[cols_with_zeros] = data[cols_with_zeros].replace(0, np.nan)
 
-# Caso queira modificar as colunas consideradas basta alterar o array a seguir.
 feature_cols = ['Pregnancies', 'Glucose', 'BloodPressure', 'BMI', 'DiabetesPedigreeFunction', 'Age']
-X = data[feature_cols]
+X = data[feature_cols].copy()
 y = data.Outcome
 
-# Criando imputadores de valores
-print(' - Criando imputador')
-imputador_zeros = SimpleImputer(strategy="constant", fill_value=0)
-imputador_media = SimpleImputer() # default is mean
-imputador_mediana = SimpleImputer(strategy="median")
-imp_knn = KNNImputer()
+print(' - Montando Pipeline Preditivo (Escala -> Imputação -> KNN)')
+# Pipeline garante que não há fuga de dados (data leakage)
+pipe = Pipeline([
+    ('scaler', MinMaxScaler()),
+    ('imputer', KNNImputer(n_neighbors=5, weights='distance')),
+    ('classifier', KNeighborsClassifier(n_neighbors=3))
+])
 
-# Criando escaladores
-print(' - Criando escalador (normalizacao)')
-min_max_scaler = MinMaxScaler()
-statistics_scaler = RobustScaler()
+print(' - Configurando Stratified K-Fold Cross Validation')
+skf = StratifiedKFold(n_splits=10, shuffle=True, random_state=1)
 
-# Criando o modelo preditivo para a base trabalhada
-print(' - Criando modelo preditivo')
-neigh = KNeighborsClassifier(n_neighbors=3) # classificador
-# neigh.fit(X_scaled, y)
-
-# Pipeline de pre processamento
-pipe = make_pipeline(imputador_mediana, min_max_scaler, neigh)
-
-# Testando com validacao cruzada na base de testes ('database')
-print(' - Testando o modelo com validacao cruzada')
-scores = cross_val_score(pipe, X, y, cv=5)
-print(f'\t{scores}')
-internal_score: str = f'\tMean: {scores.mean()} +/- {scores.std()}'
+print(' - Testando o modelo com validação cruzada estratificada (10-fold)')
+scores = cross_val_score(pipe, X, y, cv=skf)
+internal_score = f'\tMean: {scores.mean():.4f} +/- {scores.std():.4f}'
+print(f'Lista de exatidões (accuracies): {np.round(scores, 4)}')
 print(internal_score)
-enviar = input("Enviar? (y/n) ")
 
+enviar = input("\nEnviar predições para o servidor? (y/n) ")
 if enviar != 'y':
     sys.exit("Envio abortado")
 
-print("OK! Enviando...\n")
-
-# Treinando com a base de treino inteira
-print(' - Treinando o modelo')
+print("OK! Treinando com todos os dados e preparando envio...\n")
 pipe.fit(X, y)
 
-# Realizando previsões com o arquivo de teste ('app')
-print(' - Aplicando modelo e enviando para o servidor')
+print(' - Lendo e processando os dados de envio (diabetes_app.csv)')
 data_app = pd.read_csv('diabetes_app.csv')
-data_app = data_app[feature_cols]
-y_pred = pipe.predict(data_app)
-# y_pred = neigh.predict(data_app)
 
-# Enviando previsões realizadas com o modelo para o servidor
+# ATENÇÃO: Os dados do app recebem a mesma regra de zero = NaN
+data_app[cols_with_zeros] = data_app[cols_with_zeros].replace(0, np.nan)
+X_app = data_app[feature_cols].copy()
+
+y_pred = pipe.predict(X_app)
+
 URL = "https://aydanomachado.com/mlclass/01_Preprocessing.php"
-
 DEV_KEY = "VNW"
 
-# json para ser enviado para o servidor
-data = {'dev_key':DEV_KEY,
-        'predictions':pd.Series(y_pred).to_json(orient='values')}
-
-# Enviando requisição e salvando o objeto resposta
-r = requests.post(url = URL, data = data)
-
-# Extraindo e imprimindo o texto da resposta
+data_send = {
+    'dev_key': DEV_KEY,
+    'predictions': pd.Series(y_pred).to_json(orient='values')
+}
+r = requests.post(url=URL, data=data_send)
 print(" - Resposta do servidor:\n", r.text, "\n")
 
-log = input("Deseja registrar esse resultado? (y/n) ")
+log = input("Deseja registar este resultado? (y/n) ")
 if log == 'y':
-    desc: str = input("Descreva essa tentativa: ")
+    desc = input("Descreva esta tentativa: ")
     log_result(desc, r, internal_score)
